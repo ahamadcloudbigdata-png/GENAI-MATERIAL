@@ -1,0 +1,79 @@
+# export AWS_REGION="us-west-2"
+# export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+# docker tag llm-api:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/llm-api:latest
+# docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/llm-api:latest
+
+# Create one lambda fn with above image 
+
+# configure below environment variables in the lamdba function 
+
+# SECRET_NAME="llm-secrets"
+# AWS_REGION_NAME="us-west-2"
+
+# configure llm-secrets with below 
+
+# {
+#   "OPENAI_API_KEY": "your-openai-key",
+#   "OPENAI_MODEL": "gpt-4o-mini",
+#   "QUERY_EXECUTOR_FUNCTION": "generic-query-executor"
+# }
+
+# expose the lambda with functional url 
+
+# https://h2hyz4mqjmlrp5fjhdpj65hiji0dxbyo.lambda-url.us-west-2.on.aws/
+
+1. Configure one EC2 instance with min of 30GB Disk T2.Micro with Ubuntu Latest AMI
+
+2. Installing and configuring docker
+
+sudo su - 
+# Add Docker's official GPG key:
+sudo apt update
+sudo apt install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# Add the repository to Apt sources:
+sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+Components: stable
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+
+sudo apt update
+sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl status docker
+sudo systemctl start docker
+sudo docker run hello-world
+
+3.Create IAM User GENAI-TEXT2SQL-USER with "administrator" access and generate access key and secret key
+
+aws configure 
+
+4. Creating aws services for application hosting
+git clone https://github.com/shan5a6/GENAI-MATERIAL.git
+cd GENAI-MATERIAL/PROJECT3-PROMPT-ENGG-TEXT-TO-SQL/
+
+2. LLM-API
+
+AWS_REGION_NAME: us-west-2
+SECRET_NAME: llm-secrets
+Note: 
+1.Expose this with function url 
+2. Change execution time to 15 mins 
+3. IAM ROLE is important
+
+
+3. Generic Query Executor
+DB_HOST - postgres.cje848ue8iru.us-west-2.rds.amazonaws.com
+DB_NAME - postgres
+DB_PASSWORD - postgres1234
+DB_PORT - 5432
+DB_SECRET_NAME - postgres
+DB_USER - postgres
+Note:
+1. IAM ROLE is important
+2. Change execution time to 15 mins 
