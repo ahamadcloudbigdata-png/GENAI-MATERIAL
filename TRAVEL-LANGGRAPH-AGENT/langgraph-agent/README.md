@@ -41,7 +41,7 @@ Conditional Routing
 ---
 
 # 📁 Project Structure
-
+```
 TRAVEL-LANGGRAPH-AGENT/
 │
 ├── langgraph-agent/
@@ -59,7 +59,7 @@ TRAVEL-LANGGRAPH-AGENT/
 ├── .github/workflows/
 │ └── docker-ecr.yml # CI/CD pipeline
 
-
+```
 ---
 
 # ⚙️ Setup Instructions

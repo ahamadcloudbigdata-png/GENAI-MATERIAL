@@ -3,16 +3,15 @@ name: Deploy to Amazon ECR
 on:
   push:
     branches:
-      - master  # Triggered on push to master branch
+      - master
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   deploy:
     name: Build and Push to ECR
     runs-on: ubuntu-latest
-    environment: production
 
     steps:
       - name: Checkout Code
@@ -36,21 +35,12 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          # Build the docker container and tag it with the git commit SHA
+          # Navigate to the directory containing the Dockerfile
+          cd langgraph-agent
+          
+          # Build and tag
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
           
-          # Push the specific commit tag and the 'latest' tag
+          # Push tags
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          
-          # Output the image name for potential downstream deployment steps
-          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-      - name: Update ECS Service (Optional)
-        # Uncomment this if you want to automatically trigger the ECS deployment
-        # uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        # with:
-        #   task-definition: task-definition.json
-        #   service: travel-planner-service
-        #   cluster: travel-cluster
-        #   wait-for-service-stability: true
