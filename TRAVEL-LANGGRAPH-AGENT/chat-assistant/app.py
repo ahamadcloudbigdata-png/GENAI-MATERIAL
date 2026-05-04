@@ -7,119 +7,58 @@ import json
 from langchain_openai import ChatOpenAI
 
 # =========================================================
-# LOGGING & CONFIG (ENHANCED)
+# LOGGING & CONFIG
 # =========================================================
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)]
 )
-
 logger = logging.getLogger("TRAVEL_UI")
-AGENT_LOG = logging.getLogger("AGENT_FLOW")
-CALLBACK_LOG = logging.getLogger("CALLBACK_FLOW")
-UI_LOG = logging.getLogger("UI_RENDER")
 
 LLM_AGENT_URL = os.environ.get("LLM_AGENT_URL", "http://your-ecs-agent:8000/chat")
 
 llm = ChatOpenAI(
-    model="gpt-4o-mini",
+    model="gpt-4o-mini", 
     temperature=0,
     api_key=os.environ.get("OPENAI_API_KEY")
 )
 
 # =========================================================
-# DEFAULT STATE (CRITICAL FIX)
-# =========================================================
-DEFAULT_STATE = {
-    "origin": "unknown",
-    "destination": "unknown",
-    "travel_date_formatted": "unknown",
-    "total_budget": None
-}
-
-# =========================================================
 # UTILITY FUNCTIONS
 # =========================================================
 
-from datetime import datetime
-from dateutil import parser
-
-def resolve_date(raw_date: str):
-    if not raw_date or raw_date == "unknown":
-        return "unknown"
-
-    try:
-        current_year = datetime.utcnow().year
-        dt = parser.parse(raw_date, fuzzy=True, default=datetime(current_year, 1, 1))
-        dt = dt.replace(year=current_year)
-        return dt.strftime("%Y-%m-%d")
-    except:
-        return "unknown"
-    
 async def parse_user_request(text: str):
-    logger.info(f"🧠 Parsing user input: {text}")
-
+    """Extracts entities and identifies missing fields."""
     prompt = f"""
-Extract travel details from the user's request.
-
-User Request: "{text}"
-
-Return ONLY a JSON object with:
-
-- origin: string or "unknown"
-- destination: string or "unknown"
-- travel_date_raw: string exactly as user wrote (e.g. "oct 25th", "15 july", or "unknown")
-- total_budget: number or null
-
-STRICT RULES:
-- DO NOT infer or calculate dates
-- DO NOT convert dates to ISO format
-- DO NOT assume year, month, or day
-- DO NOT normalize or reformat anything related to date
-- If user does not explicitly provide full date → travel_date_raw must be "unknown"
-- Never hallucinate missing values
-"""
-
+    Extract travel details from the user's request. 
+    User Request: "{text}"
+    
+    Return ONLY a JSON object with:
+    - origin (string or "unknown")
+    - destination (string or "unknown")
+    - travel_date_input (string or "unknown")
+    - total_budget (number or null)
+    
+    Rules:
+    - If a field is missing, set it to "unknown" or null.
+    - Do not guess.
+    """
     try:
         response = await llm.ainvoke(prompt)
         content = response.content.strip()
-
-        if content.startswith("```json"):
-            content = content[7:-3]
-
-        parsed = json.loads(content)
-
-        logger.info(f"🧾 Parsed Data: {parsed}")
-        return parsed
-
+        if content.startswith("```json"): content = content[7:-3]
+        return json.loads(content.strip())
     except Exception as e:
-        logger.error(f"❌ Parsing Error: {e}")
+        logger.error(f"Shield Parsing Error: {e}")
         return None
 
-
 async def call_agent(payload: dict):
-    AGENT_LOG.info(f"➡️ CALLING AGENT | Action: {payload.get('action')}")
-    AGENT_LOG.info(f"📦 Payload: {json.dumps(payload, indent=2)}")
-
     async with httpx.AsyncClient(timeout=60.0) as client:
-        try:
-            response = await client.post(LLM_AGENT_URL, json=payload)
-
-            AGENT_LOG.info(f"⬅️ STATUS CODE: {response.status_code}")
-
-            data = response.json()
-            AGENT_LOG.info(f"📥 RESPONSE: {json.dumps(data, indent=2)}")
-            return data
-
-        except httpx.ConnectTimeout:
-            AGENT_LOG.error("❌ CONNECT TIMEOUT to backend")
-            return {"error": "timeout"}
-
-        except Exception as e:
-            AGENT_LOG.error(f"❌ Agent call failed: {e}")
-            return {"error": str(e)}
-
+        logger.info(f"Calling Agent | Action: {payload.get('action')}")
+        response = await client.post(LLM_AGENT_URL, json=payload)
+        response.raise_for_status()
+        return response.json()
 
 # =========================================================
 # CHAINLIT HANDLERS
@@ -127,114 +66,75 @@ async def call_agent(payload: dict):
 
 @cl.on_chat_start
 async def start():
-    thread_id = cl.user_session.get("id")
-    cl.user_session.set("thread_id", thread_id)
+    cl.user_session.set("thread_id", cl.user_session.get("id"))
     cl.user_session.set("activities_shown", False)
-    cl.user_session.set("travel_data", DEFAULT_STATE.copy())
-
-    logger.info(f"🚀 SESSION STARTED | Thread ID: {thread_id}")
-
-    await cl.Message(
-        content="✈️ **Smart Travel Planner**\nProvide Source, Destination, Date, Budget."
-    ).send()
-
+    await cl.Message(content="✈️ **Smart Travel Planner**\nWhere are we heading? Please include your **Source, Destination, Date, and Budget**.").send()
 
 @cl.on_message
 async def handle_message(message: cl.Message):
     user_input = message.content.strip()
-
-    logger.info(f"📩 USER INPUT: {user_input}")
+    
+    # 1. RETRIEVE COMMAND
+    if user_input.lower().startswith("/retrieve"):
+        parts = user_input.split(" ")
+        if len(parts) < 2:
+            await cl.Message(content="⚠️ Please provide the ID. Example: `/retrieve TRV-A1B2C3`").send()
+            return
+        
+        ref_id = parts[1].strip().upper()
+        cl.user_session.set("thread_id", ref_id) # Switch context to the booking ID
+        
+        try:
+            res_data = await call_agent({"thread_id": ref_id, "action": "retrieve"})
+            await cl.Message(content=f"🔍 Pulling record for `{ref_id}`...").send()
+            await process_agent_response(res_data)
+        except Exception as e:
+            await cl.Message(content=f"❌ Could not find Reference ID: {ref_id}").send()
+        return
 
     thread_id = cl.user_session.get("thread_id")
-    if any(word in user_input.lower() for word in ["book", "ticket", "flight"]):
-        logger.info("🆕 New booking intent detected → resetting session")
 
-        cl.user_session.set("travel_data", DEFAULT_STATE.copy())
-
-    # Reset thread ONLY if NOT retrieving
-    if not user_input.lower().startswith("/retrieve"):
-        thread_id = cl.user_session.get("id")
-        cl.user_session.set("thread_id", thread_id)
-    # =========================
-    # RETRIEVE FLOW
-    # =========================
-    if user_input.lower().startswith("/retrieve"):
-        parts = user_input.split()
-
-        if len(parts) < 2:
-            await cl.Message(content="⚠️ Usage: /retrieve TRV-ID").send()
-            return
-
-        ref_id = parts[1].upper()
-
-        cl.user_session.set("thread_id", ref_id)
-
-        res_data = await call_agent({
-            "thread_id": ref_id,
-            "action": "retrieve"
-        })
-
-        await process_agent_response(res_data)
-        return
-
-    # =========================
-    # BUDGET SHORTCUT
-    # =========================
+    # 2. Budget Adjustment Shortcut
     if user_input.replace('.', '', 1).isdigit():
-        logger.info("💰 Budget update detected")
-
-        res_data = await call_agent({
-            "thread_id": thread_id,
-            "action": "fix_budget",
-            "data": {"total_budget": float(user_input)}
-        })
-
+        payload = {"thread_id": thread_id, "action": "fix_budget", "data": {"total_budget": float(user_input)}}
+        res_data = await call_agent(payload)
         await process_agent_response(res_data)
         return
 
-    # =========================
-    # SESSION LOAD
-    # =========================
-    current_data = cl.user_session.get("travel_data") or DEFAULT_STATE.copy()
+    # 3. Session Initialization (FIXED: Prevents NoneType error)
+    current_data = cl.user_session.get("travel_data")
+    if current_data is None:
+        current_data = {
+            "origin": "unknown",
+            "destination": "unknown",
+            "travel_date_input": "unknown",
+            "total_budget": None
+        }
 
+    # 4. Extract and Merge
     new_details = await parse_user_request(user_input)
-
     if new_details:
-        for key in ["origin", "destination"]:
-            val = new_details.get(key, "unknown")
-            if val != "unknown":
-                current_data[key] = val
-
-        # 🔥 DATE FIX (THIS IS THE IMPORTANT PART)
-        raw_date = new_details.get("travel_date_raw", "unknown")
-        current_data["travel_date_formatted"] = resolve_date(raw_date)
-
-        # budget
+        for key in ["origin", "destination", "travel_date_input"]:
+            if new_details.get(key) != "unknown":
+                current_data[key] = new_details[key]
         if new_details.get("total_budget"):
             current_data["total_budget"] = new_details["total_budget"]
 
     cl.user_session.set("travel_data", current_data)
 
-    logger.info(f"🧾 SESSION DATA: {current_data}")
-
-    # =========================
-    # VALIDATION
-    # =========================
+    # 5. Missing Fields Check
     missing = []
-    if current_data["origin"] == "unknown":
-        missing.append("Source")
-    if current_data["destination"] == "unknown":
-        missing.append("Destination")
-    if not current_data["total_budget"]:
-        missing.append("Budget")
+    if current_data["origin"] == "unknown": missing.append("Source City")
+    if current_data["destination"] == "unknown": missing.append("Destination")
+    if not current_data["total_budget"]: missing.append("Total Budget")
 
     if missing:
-        await cl.Message(content=f"Need: {', '.join(missing)}").send()
+        msg = f"Got it! Still need: **{', '.join(missing)}** to start the search."
+        await cl.Message(content=msg).send()
         return
 
-    # =========================
-    # START AGENT
-    # =========================
+    # 6. Start Agent Search
+    cl.user_session.set("travel_data", None) # Clear draft
     payload = {
         "thread_id": thread_id,
         "action": "start",
@@ -245,98 +145,58 @@ async def handle_message(message: cl.Message):
             "total_budget": current_data.get("total_budget")
         }
     }
-
-    logger.info("🚀 STARTING AGENT FLOW")
-
-    res_data = await call_agent(payload)
-    await process_agent_response(res_data)
-
+    
+    await cl.Message(content=f"🚀 Searching flights from {current_data['origin']} to {current_data['destination']}...").send()
+    
+    try:
+        res_data = await call_agent(payload)
+        await process_agent_response(res_data)
+    except Exception as e:
+        await cl.Message(content=f"⚠️ Agent Error: {e}").send()
 
 # =========================================================
-# UI LOGIC
+# UI RENDERING LOGIC
 # =========================================================
-if res_data.get("error") or res_data.get("detail"):
-    err = res_data.get("error") or res_data.get("detail")
-    await cl.Message(content=f"❌ Backend Error: {err}").send()
-    return
 
 async def process_agent_response(res_data):
-
-    UI_LOG.info(f"🎯 UI STATE: {json.dumps(res_data, indent=2)}")
-
-    # -------------------------
-    # BOOKING VIEW
-    # -------------------------
-    if res_data.get("is_booked") and res_data.get("booking_reference"):
-        summary = f"""
-### 🔍 Booking Details
-🆔 {res_data.get("booking_reference")}
-✈️ {res_data.get("selected_flight_price")}
-🏨 {res_data.get("selected_hotel_price")}
-💰 {res_data.get("remaining_budget")}
-📍 {res_data.get("origin")} → {res_data.get("destination")}
-📅 {res_data.get("travel_date_formatted", "unknown")}
-"""
-        await cl.Message(content=summary).send()
-    # 🔥🔥 CRITICAL FIX → RESET SESSION FOR NEXT BOOKING
-        cl.user_session.set("travel_data", DEFAULT_STATE.copy())
-        cl.user_session.set("thread_id", cl.user_session.get("id"))
-
-        logger.info("♻️ Session reset for new booking")
-        return
-
-    # -------------------------
-    # FLIGHTS
-    # -------------------------
-    if res_data.get("flight_options") and not res_data.get("selected_flight_price"):
+    # 1. Flight Selection Buttons
+    if "flight_options" in res_data and not res_data.get("selected_flight_price"):
         actions = [
-            cl.Action(
-                name="select_flight",
-                label=f"{f['info']} (${f['price']})",
-                payload={"price": f['price']}
-            )
+            cl.Action(name="select_flight", label=f"{f['info']} (${f['price']})", payload={"price": f['price']})
             for f in res_data["flight_options"]
         ]
-        await cl.Message(content="✈️ Select Flight:", actions=actions).send()
-        return
+        await cl.Message(content="✈️ **Select a Flight:**", actions=actions).send()
 
-    # -------------------------
-    # HOTELS
-    # -------------------------
-    if res_data.get("hotel_options") and not res_data.get("selected_hotel_price"):
+    # 2. Hotel Selection Buttons
+    elif "hotel_options" in res_data and not res_data.get("selected_hotel_price"):
         actions = [
-            cl.Action(
-                name="select_hotel",
-                label=f"{h['name']} (${h['price']})",
-                payload={"price": h['price']}
-            )
+            cl.Action(name="select_hotel", label=f"{h['name']} (${h['price']})", payload={"price": h['price']})
             for h in res_data["hotel_options"]
         ]
-        await cl.Message(content="🏨 Select Hotel:", actions=actions).send()
-        return
+        await cl.Message(content="🏨 **Select a Hotel:**", actions=actions).send()
 
-    # -------------------------
-    # FINAL CONFIRM
-    # -------------------------
-    if res_data.get("selected_hotel_price") and not res_data.get("is_booked"):
-        remaining = res_data.get("remaining_budget", 0)
+    # 3. Budget Alert
+    elif res_data.get("remaining_budget", 0) < 0:
+        over = abs(res_data['remaining_budget'])
+        await cl.Message(content=f"❌ **Budget Alert!**\nYou are over by **${over:.2f}**. Please enter a new total budget.").send()
 
-        summary = f"""
-### Final Confirmation
-💰 Remaining: {remaining}
-"""
-
-        actions = [
-            cl.Action(
-                name="confirm_booking",
-                label="Confirm Booking",
-                payload={}
-            )
-        ]
-
+    # 4. HITL: Confirmation Before Final Booking
+    elif res_data.get("selected_hotel_price") and not res_data.get("is_booked"):
+        summary = (
+            f"### 🛡️ Final Confirmation\n"
+            f"Ready to book? Your remaining budget will be **${res_data.get('remaining_budget', 0):.2f}**."
+        )
+        actions = [cl.Action(name="confirm_booking", label="✅ Confirm & Generate ID", value="confirm")]
         await cl.Message(content=summary, actions=actions).send()
-        return
 
+    # 5. Post-Booking: Reference ID & Sightseeing Toggle
+    elif res_data.get("is_booked"):
+        ref = res_data.get("booking_reference")
+        await cl.Message(content=f"🎉 **Booking Confirmed!**\nReference ID: `{ref}`\nUse `/retrieve {ref}` to see this later.").send()
+        
+        if res_data.get("activities") and not cl.user_session.get("activities_shown"):
+            actions = [cl.Action(name="show_spots", label="🎡 View Sightseeing Spots", value="show")]
+            await cl.Message(content="Would you like to see local attractions?", actions=actions).send()
 
 # =========================================================
 # CALLBACKS
@@ -344,55 +204,30 @@ async def process_agent_response(res_data):
 
 @cl.action_callback("select_flight")
 async def on_flight(action: cl.Action):
-    CALLBACK_LOG.info(f"✈️ Flight selected: {action.payload}")
-
-    res = await call_agent({
-        "thread_id": cl.user_session.get("thread_id"),
-        "action": "select_prices",
-        "data": {"selected_flight_price": float(action.payload["price"])}
-    })
-
+    price = float(action.payload["price"])
+    payload = {"thread_id": cl.user_session.get("thread_id"), "action": "select_prices", "data": {"selected_flight_price": price}}
+    res = await call_agent(payload)
     await process_agent_response(res)
-
 
 @cl.action_callback("select_hotel")
 async def on_hotel(action: cl.Action):
-    CALLBACK_LOG.info(f"🏨 Hotel selected: {action.payload}")
-
-    res = await call_agent({
-        "thread_id": cl.user_session.get("thread_id"),
-        "action": "select_prices",
-        "data": {"selected_hotel_price": float(action.payload["price"])}
-    })
-
+    price = float(action.payload["price"])
+    payload = {"thread_id": cl.user_session.get("thread_id"), "action": "select_prices", "data": {"selected_hotel_price": price}}
+    await cl.Message(content=f"🏨 Hotel selected: ${price}. Calculating final itinerary...").send()
+    res = await call_agent(payload)
     await process_agent_response(res)
-
 
 @cl.action_callback("confirm_booking")
 async def on_confirm(action: cl.Action):
-    CALLBACK_LOG.info("✅ Confirm booking triggered")
-
-    res = await call_agent({
-        "thread_id": cl.user_session.get("thread_id"),
-        "action": "confirm_booking"
-    })
-
+    payload = {"thread_id": cl.user_session.get("thread_id"), "action": "confirm_booking"}
+    res = await call_agent(payload)
     await process_agent_response(res)
-
 
 @cl.action_callback("show_spots")
 async def on_show_spots(action: cl.Action):
-    CALLBACK_LOG.info("🎡 Fetching activities")
-
-    res_data = await call_agent({
-        "thread_id": cl.user_session.get("thread_id"),
-        "action": "get_activities"
-    })
-
-    activities = res_data.get("activities", [])
-
-    for act in activities[:5]:
-        if isinstance(act, dict):
-            await cl.Message(
-                content=f"**{act.get('title')}**\n{act.get('price')}"
-            ).send()
+    cl.user_session.set("activities_shown", True)
+    res_data = await call_agent({"thread_id": cl.user_session.get("thread_id"), "action": "retrieve"})
+    
+    for act in res_data.get("activities", [])[:5]:
+        img = [cl.Image(url=act['thumbnail'], display="inline")] if act.get('thumbnail') else []
+        await cl.Message(content=f"**{act['title']}**\n{act.get('price', 'Free')}", elements=img).send()
