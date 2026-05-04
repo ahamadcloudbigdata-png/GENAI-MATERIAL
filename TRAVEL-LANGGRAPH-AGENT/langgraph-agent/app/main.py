@@ -18,7 +18,12 @@ async def chat(payload: dict = Body(...)):
         elif action == "select_prices":
             # 1. Update the state with the user's choice
             graph.update_state(config, data)
-            graph.invoke(None, config)
+            graph.invoke(
+                {
+                    "recalculate": True  # dummy trigger
+                },
+                config
+            )
             # # 2. IMPORTANT: Check if we already have both flight AND hotel
             # state_now = graph.get_state(config).values
             # if state_now.get("selected_flight_price") and state_now.get("selected_hotel_price"):
@@ -42,6 +47,10 @@ async def chat(payload: dict = Body(...)):
             # Update total_budget and re-run supervisor/route logic
             graph.update_state(config, data)
             graph.invoke(None, config)
+        
+        elif action == "get_activities":
+            # just return current state (activities already computed)
+            pass
             
         else:
             raise HTTPException(status_code=400, detail="Invalid action")

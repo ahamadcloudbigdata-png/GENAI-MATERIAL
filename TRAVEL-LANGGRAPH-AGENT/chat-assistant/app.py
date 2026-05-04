@@ -229,7 +229,10 @@ async def on_confirm(action: cl.Action):
 async def on_show_spots(action: cl.Action):
     cl.user_session.set("activities_shown", True)
     # Pull fresh state
-    res_data = await call_agent({"thread_id": cl.user_session.get("thread_id"), "action": "retrieve"})
+    res_data = await call_agent({
+            "thread_id": cl.user_session.get("thread_id"),
+            "action": "get_activities"
+        })
     
     activities = res_data.get("activities", [])
     if not activities:

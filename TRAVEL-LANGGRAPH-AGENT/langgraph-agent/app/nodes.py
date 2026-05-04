@@ -104,12 +104,30 @@ def supervisor_node(state: TravelState):
 
 def activity_agent(state: TravelState):
     logger.info(f"--- 🎭 ACTIVITIES: {state['destination']} ---")
+    
     try:
-        res = search_tool.run(f"top attractions in {state['destination']}")
-        return {"activities": [res]}
+        results = search_tool.results(f"top attractions in {state['destination']}")
+        
+        activities = []
+        
+        # 👇 Extract from SerpAPI structured response
+        for place in results.get("organic_results", [])[:5]:
+            activities.append({
+                "title": place.get("title"),
+                "price": "Check availability",
+                "thumbnail": place.get("thumbnail") or None
+            })
+        
+        logger.info(f"Extracted {len(activities)} activities")
+        return {"activities": activities}
+
     except Exception as e:
         logger.error(f"Activity Search Error: {e}")
-        return {"activities": ["General sightseeing"]}
+        return {
+            "activities": [
+                {"title": "Local sightseeing", "price": "Free", "thumbnail": None}
+            ]
+        }
 
 def budget_warning_node(state: TravelState):
     logger.warning(f"--- ⚠️ OVER BUDGET: ${abs(state.get('remaining_budget', 0))} ---")
