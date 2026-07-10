@@ -1,0 +1,50 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: travel-mcp-server
+  namespace: travel-agent
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: travel-mcp.example.com
+      http:
+        paths:
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: travel-mcp-server
+                port:
+                  number: 8000
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: travel-mcp-server
+#   namespace: travel-agent
+#   annotations:
+#     kubernetes.io/ingress.class: nginx
+#     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+#     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+#     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+#     nginx.ingress.kubernetes.io/proxy-buffering: "off"
+# spec:
+#   ingressClassName: nginx
+#   rules:
+#     - host: travel-mcp.example.com
+#       http:
+#         paths:
+#           - path: /mcp
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: travel-mcp-server
+#                 port:
+#                   number: 8000
+  # Enable this after installing cert-manager and creating a ClusterIssuer.
+  # tls:
+  #   - hosts:
+  #       - travel-mcp.example.com
+  #     secretName: travel-mcp-server-tls
