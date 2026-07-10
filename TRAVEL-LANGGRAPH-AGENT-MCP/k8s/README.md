@@ -2,7 +2,7 @@
 
 These manifests deploy the MCP-enabled travel planner as two Kubernetes services:
 
-- `travel-agent-api`: internal FastAPI + LangGraph backend.
+- `travel-langgraph-agent`: internal FastAPI + LangGraph backend.
 - `travel-mcp-server`: public MCP Streamable HTTP adapter exposed at `/mcp`.
 
 ## Prerequisites
@@ -20,10 +20,10 @@ These manifests deploy the MCP-enabled travel planner as two Kubernetes services
 00-namespace.yaml
 01-configmap.yaml
 02-secret.example.yaml
-03-backend.yaml
+03-langgraph-agent.yaml
+04-mcp-server.yaml
 05-ingress.yaml
 06-hpa.yaml
-07-mcp-server.yaml
 kustomization.yaml
 ```
 
@@ -32,8 +32,8 @@ kustomization.yaml
 1. Update image URIs in:
 
 ```bash
-k8s/03-backend.yaml
-k8s/07-mcp-server.yaml
+k8s/03-langgraph-agent.yaml
+k8s/04-mcp-server.yaml
 ```
 
 Replace:
@@ -72,7 +72,7 @@ LANGGRAPH_POSTGRES_SETUP: "true"
 BOOKINGS_TABLE_SETUP: "true"
 ```
 
-For setup, keep `travel-agent-api` replicas at `1` in `03-backend.yaml` to avoid multiple pods trying to run migrations at the same time.
+For setup, keep `travel-langgraph-agent` replicas at `1` in `03-langgraph-agent.yaml` to avoid multiple pods trying to run migrations at the same time.
 
 Deploy once, confirm startup succeeds, then set both setup flags back to:
 
@@ -85,6 +85,12 @@ BOOKINGS_TABLE_SETUP: "false"
 
 ```bash
 kubectl apply -k k8s
+```
+
+This creates the standalone namespace:
+
+```text
+travel-mcp
 ```
 
 ## GitHub Actions
@@ -118,9 +124,9 @@ run_schema_setup
 Check resources:
 
 ```bash
-kubectl get pods -n travel-agent
-kubectl get svc -n travel-agent
-kubectl get ingress -n travel-agent
+kubectl get pods -n travel-mcp
+kubectl get svc -n travel-mcp
+kubectl get ingress -n travel-mcp
 ```
 
 Connect Claude or another MCP client to:
@@ -138,13 +144,13 @@ claude mcp add --transport http travel-booking https://<your-ingress-host>/mcp
 View logs:
 
 ```bash
-kubectl logs -n travel-agent deploy/travel-agent-api
-kubectl logs -n travel-agent deploy/travel-mcp-server
+kubectl logs -n travel-mcp deploy/travel-langgraph-agent
+kubectl logs -n travel-mcp deploy/travel-mcp-server
 ```
 
 ## Production Notes
 
-- Add authentication or network restrictions between `travel-mcp-server` and `travel-agent-api`.
+- Add authentication or network restrictions between `travel-mcp-server` and `travel-langgraph-agent`.
 - Use TLS on the ingress before connecting external MCP clients.
 - Replace raw Kubernetes Secret YAML with AWS Secrets Manager, External Secrets Operator, Secrets Store CSI Driver, or Sealed Secrets.
 - Add NetworkPolicies so only the MCP server can reach the backend API.

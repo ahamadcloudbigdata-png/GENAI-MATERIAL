@@ -72,7 +72,7 @@ claude mcp add --transport http travel-booking http://localhost:8001/mcp
 For Kubernetes ingress, replace the URL with your public host:
 
 ```bash
-claude mcp add --transport http travel-booking https://travel-agent.example.com/mcp
+claude mcp add --transport http travel-booking https://travel-mcp.example.com/mcp
 ```
 
 ## Docker Build
@@ -80,4 +80,3 @@ claude mcp add --transport http travel-booking https://travel-agent.example.com/
 ```bash
 docker build -t travel-mcp-server .
 ```
-

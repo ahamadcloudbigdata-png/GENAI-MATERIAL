@@ -2,10 +2,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: travel-mcp-server
-  namespace: travel-agent
+  namespace: travel-mcp
   labels:
     app.kubernetes.io/name: travel-mcp-server
-    app.kubernetes.io/part-of: travel-agent
+    app.kubernetes.io/component: mcp-server
+    app.kubernetes.io/part-of: travel-langgraph-agent-mcp
 spec:
   replicas: 2
   selector:
@@ -15,7 +16,8 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: travel-mcp-server
-        app.kubernetes.io/part-of: travel-agent
+        app.kubernetes.io/component: mcp-server
+        app.kubernetes.io/part-of: travel-langgraph-agent-mcp
     spec:
       nodeSelector:
         eks.amazonaws.com/nodegroup: "public-nodes"
@@ -30,7 +32,7 @@ spec:
             - name: TRAVEL_AGENT_API_URL
               valueFrom:
                 configMapKeyRef:
-                  name: travel-agent-config
+                  name: travel-mcp-config
                   key: TRAVEL_AGENT_API_URL
             - name: MCP_SERVER_NAME
               value: "Travel Booking MCP Server"
@@ -52,22 +54,23 @@ spec:
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 3
-          # resources:
-          #   requests:
-          #     cpu: 100m
-          #     memory: 256Mi
-          #   limits:
-          #     cpu: 500m
-          #     memory: 512Mi
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: travel-mcp-server
-  namespace: travel-agent
+  namespace: travel-mcp
   labels:
     app.kubernetes.io/name: travel-mcp-server
-    app.kubernetes.io/part-of: travel-agent
+    app.kubernetes.io/component: mcp-server
+    app.kubernetes.io/part-of: travel-langgraph-agent-mcp
 spec:
   type: ClusterIP
   selector:

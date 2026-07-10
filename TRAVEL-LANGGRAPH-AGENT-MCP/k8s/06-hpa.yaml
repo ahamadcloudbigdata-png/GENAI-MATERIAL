@@ -1,13 +1,13 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: travel-agent-api
-  namespace: travel-agent
+  name: travel-langgraph-agent
+  namespace: travel-mcp
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: travel-agent-api
+    name: travel-langgraph-agent
   minReplicas: 2
   maxReplicas: 5
   metrics:
@@ -22,7 +22,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: travel-mcp-server
-  namespace: travel-agent
+  namespace: travel-mcp
 spec:
   scaleTargetRef:
     apiVersion: apps/v1

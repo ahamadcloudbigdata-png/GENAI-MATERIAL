@@ -6,7 +6,7 @@ resources:
   # Copy 02-secret.example.yaml to 02-secret.yaml and fill values locally,
   # or replace it with External Secrets / AWS Secrets Manager CSI driver.
   - 02-secret.yaml
-  - 03-backend.yaml
+  - 03-langgraph-agent.yaml
+  - 04-mcp-server.yaml
   - 05-ingress.yaml
   - 06-hpa.yaml
-  - 07-mcp-server.yaml

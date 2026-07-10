@@ -31,7 +31,7 @@ permissions:
 
 env:
   PROJECT_DIR: TRAVEL-LANGGRAPH-AGENT-MCP
-  NAMESPACE: travel-agent
+  NAMESPACE: travel-mcp
   BACKEND_ECR_REPOSITORY: travel-langgraph-agent
   MCP_ECR_REPOSITORY: travel-mcp-server
 
@@ -133,16 +133,16 @@ jobs:
 
           cp "${PROJECT_DIR}/k8s/00-namespace.yaml" rendered-k8s/
           cp "${PROJECT_DIR}/k8s/01-configmap.yaml" rendered-k8s/
-          cp "${PROJECT_DIR}/k8s/03-backend.yaml" rendered-k8s/
+          cp "${PROJECT_DIR}/k8s/03-langgraph-agent.yaml" rendered-k8s/
+          cp "${PROJECT_DIR}/k8s/04-mcp-server.yaml" rendered-k8s/
           cp "${PROJECT_DIR}/k8s/05-ingress.yaml" rendered-k8s/
           cp "${PROJECT_DIR}/k8s/06-hpa.yaml" rendered-k8s/
-          cp "${PROJECT_DIR}/k8s/07-mcp-server.yaml" rendered-k8s/
 
           BACKEND_IMAGE="${ECR_REGISTRY}/${BACKEND_ECR_REPOSITORY}:${IMAGE_TAG}"
           MCP_IMAGE="${ECR_REGISTRY}/${MCP_ECR_REPOSITORY}:${IMAGE_TAG}"
 
-          sed -i "s|111122223333.dkr.ecr.us-east-1.amazonaws.com/travel-langgraph-agent:latest|${BACKEND_IMAGE}|g" rendered-k8s/03-backend.yaml
-          sed -i "s|111122223333.dkr.ecr.us-east-1.amazonaws.com/travel-mcp-server:latest|${MCP_IMAGE}|g" rendered-k8s/07-mcp-server.yaml
+          sed -i "s|111122223333.dkr.ecr.us-east-1.amazonaws.com/travel-langgraph-agent:latest|${BACKEND_IMAGE}|g" rendered-k8s/03-langgraph-agent.yaml
+          sed -i "s|111122223333.dkr.ecr.us-east-1.amazonaws.com/travel-mcp-server:latest|${MCP_IMAGE}|g" rendered-k8s/04-mcp-server.yaml
           sed -i "s|travel-mcp.example.com|${INGRESS_HOST}|g" rendered-k8s/05-ingress.yaml
           sed -i "s|LANGGRAPH_POSTGRES_SETUP: \"true\"|LANGGRAPH_POSTGRES_SETUP: \"${RUN_SCHEMA_SETUP}\"|g" rendered-k8s/01-configmap.yaml
           sed -i "s|LANGGRAPH_POSTGRES_SETUP: \"false\"|LANGGRAPH_POSTGRES_SETUP: \"${RUN_SCHEMA_SETUP}\"|g" rendered-k8s/01-configmap.yaml
@@ -153,7 +153,7 @@ jobs:
             python - <<'PY'
           from pathlib import Path
 
-          path = Path("rendered-k8s/03-backend.yaml")
+          path = Path("rendered-k8s/03-langgraph-agent.yaml")
           text = path.read_text()
           text = text.replace("replicas: 2", "replicas: 1", 1)
           path.write_text(text)
@@ -172,7 +172,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          kubectl create secret generic travel-agent-secrets \
+          kubectl create secret generic travel-mcp-secrets \
             --namespace "${NAMESPACE}" \
             --from-literal=OPENAI_API_KEY="${OPENAI_API_KEY}" \
             --from-literal=SERPAPI_API_KEY="${SERPAPI_API_KEY}" \
@@ -184,14 +184,14 @@ jobs:
       - name: Apply manifests
         run: |
           kubectl apply -f rendered-k8s/01-configmap.yaml
-          kubectl apply -f rendered-k8s/03-backend.yaml
-          kubectl apply -f rendered-k8s/07-mcp-server.yaml
+          kubectl apply -f rendered-k8s/03-langgraph-agent.yaml
+          kubectl apply -f rendered-k8s/04-mcp-server.yaml
           kubectl apply -f rendered-k8s/05-ingress.yaml
           kubectl apply -f rendered-k8s/06-hpa.yaml
 
       - name: Wait for rollout
         run: |
-          kubectl rollout status deployment/travel-agent-api -n "${NAMESPACE}" --timeout=300s
+          kubectl rollout status deployment/travel-langgraph-agent -n "${NAMESPACE}" --timeout=300s
           kubectl rollout status deployment/travel-mcp-server -n "${NAMESPACE}" --timeout=300s
 
       - name: Show deployment summary
