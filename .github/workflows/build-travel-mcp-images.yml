@@ -1,3 +1,4 @@
+# This workflow builds Docker images and pushes them to ECR
 name: Build Travel MCP Images to ECR
 
 on:
